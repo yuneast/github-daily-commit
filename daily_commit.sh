@@ -145,11 +145,14 @@ if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "" ]; then
 
             # Pull merged changes to sync local with remote
             echo "Syncing local branch with remote..."
-            if git pull origin "$BASE_BRANCH"; then
+            git fetch origin "$BASE_BRANCH"
+
+            # Reset local main to match remote exactly (safe since we always work in branches)
+            if git reset --hard "origin/$BASE_BRANCH"; then
                 echo "Local $BASE_BRANCH branch synced successfully!"
             else
-                echo "Warning: Failed to pull from origin/$BASE_BRANCH"
-                echo "You may need to run: git pull origin $BASE_BRANCH"
+                echo "Warning: Failed to sync with origin/$BASE_BRANCH"
+                echo "You may need to run: git fetch origin && git reset --hard origin/$BASE_BRANCH"
             fi
 
             # Try to delete remote branch (may fail if branch protection is enabled)
