@@ -136,13 +136,24 @@ if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "" ]; then
         
         if [ $MERGE_EXIT_CODE -eq 0 ]; then
             echo "PR #$PR_NUMBER merged successfully!"
-            
-            # Try to delete branch (may fail if branch protection is enabled)
-            gh pr merge "$PR_NUMBER" --delete-branch 2>/dev/null || true
-            
-            # Pull merged changes
-            git checkout "$BASE_BRANCH" 2>/dev/null || true
-            git pull origin "$BASE_BRANCH" 2>/dev/null || true
+
+            # Switch back to main branch
+            echo "Switching to $BASE_BRANCH branch..."
+            git checkout "$BASE_BRANCH" || {
+                echo "Warning: Failed to checkout $BASE_BRANCH"
+            }
+
+            # Pull merged changes to sync local with remote
+            echo "Syncing local branch with remote..."
+            if git pull origin "$BASE_BRANCH"; then
+                echo "Local $BASE_BRANCH branch synced successfully!"
+            else
+                echo "Warning: Failed to pull from origin/$BASE_BRANCH"
+                echo "You may need to run: git pull origin $BASE_BRANCH"
+            fi
+
+            # Try to delete remote branch (may fail if branch protection is enabled)
+            git push origin --delete "$BRANCH_NAME" 2>/dev/null || true
         else
             echo "Warning: Failed to merge PR automatically."
             echo "Merge output: $MERGE_OUTPUT"
