@@ -80,28 +80,29 @@ echo "Creating Pull Request..."
 PR_TITLE="Daily update for $BRANCH_DATE"
 PR_BODY="자동 생성된 일일 업데이트 PR입니다. ($COMMIT_COUNT commits)"
 
-# Check if PR already exists
-EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+# Check if PR already exists (compatible with older gh versions)
+EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" 2>/dev/null | head -1 | awk '{print $1}' | sed 's/#//')
 
 PR_NUMBER=""
 
-if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "null" ]; then
-    # Create new PR with error output
+if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "" ]; then
+    # Create new PR (compatible with older gh versions)
     echo "Attempting to create PR from $BRANCH_NAME to $BASE_BRANCH..."
     PR_OUTPUT=$(gh pr create \
         --title "$PR_TITLE" \
         --body "$PR_BODY" \
         --base "$BASE_BRANCH" \
-        --head "$BRANCH_NAME" \
-        --json number,url 2>&1)
+        --head "$BRANCH_NAME" 2>&1)
     
     PR_EXIT_CODE=$?
     
     if [ $PR_EXIT_CODE -eq 0 ]; then
-        PR_NUMBER=$(echo "$PR_OUTPUT" | jq -r '.number' 2>/dev/null || echo "")
-        PR_URL=$(echo "$PR_OUTPUT" | jq -r '.url' 2>/dev/null || echo "")
+        # Extract PR number from URL (e.g., https://github.com/user/repo/pull/123)
+        # Compatible method that works with older grep versions
+        PR_NUMBER=$(echo "$PR_OUTPUT" | sed -n 's/.*pull\/\([0-9]*\).*/\1/p' | head -1)
+        PR_URL=$(echo "$PR_OUTPUT" | sed -n 's/.*\(https:\/\/[^[:space:]]*\).*/\1/p' | head -1)
         
-        if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ] && [ "$PR_NUMBER" != "" ]; then
+        if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "" ]; then
         echo "PR #$PR_NUMBER created successfully"
         
         # Add code review comments
@@ -157,6 +158,9 @@ else
     PR_NUMBER="$EXISTING_PR"
     echo "PR #$EXISTING_PR already exists for this branch"
     
+    # Get PR URL (compatible with older versions)
+    PR_URL=$(gh pr view "$EXISTING_PR" 2>/dev/null | sed -n 's/.*\(https:\/\/[^[:space:]]*\).*/\1/p' | head -1 || echo "")
+    
     # Update existing PR with review comment
     REVIEW_COMMENTS=(
         "추가 업데이트 완료! 👍"
@@ -176,13 +180,19 @@ git checkout "$BASE_BRANCH" 2>/dev/null || true
 echo "Daily commits completed: $COMMIT_COUNT commits made"
 
 # Show PR link if available
-if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-    REPO_INFO=$(gh repo view --json owner,name -q '.owner.login + "/" + .name' 2>/dev/null)
-    if [ -n "$REPO_INFO" ]; then
-        echo "PR: https://github.com/$REPO_INFO/pull/$PR_NUMBER"
+if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "" ]; then
+    if [ -n "$PR_URL" ]; then
+        echo "PR: $PR_URL"
     else
-        echo "PR #$PR_NUMBER created/updated"
+        # Try to get repo info from git remote
+        REPO_URL=$(git remote get-url origin 2>/dev/null | sed 's/\.git$//' | sed 's/.*github\.com[:/]//')
+        if [ -n "$REPO_URL" ]; then
+            echo "PR: https://github.com/$REPO_URL/pull/$PR_NUMBER"
+        else
+            echo "PR #$PR_NUMBER created/updated"
+        fi
     fi
 else
     echo "Branch: $BRANCH_NAME"
+    echo "You can create PR manually: gh pr create --head $BRANCH_NAME --base $BASE_BRANCH"
 fi
