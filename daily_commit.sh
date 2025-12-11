@@ -62,7 +62,18 @@ done
 
 # Push branch to remote
 echo "Pushing branch to remote..."
-git push origin "$BRANCH_NAME" -f 2>/dev/null || git push origin "$BRANCH_NAME"
+if git push origin "$BRANCH_NAME" 2>&1; then
+    echo "Branch $BRANCH_NAME pushed successfully"
+else
+    echo "Error: Failed to push branch $BRANCH_NAME"
+    git push origin "$BRANCH_NAME" -f 2>&1 || {
+        echo "Fatal: Unable to push branch. Exiting."
+        exit 1
+    }
+fi
+
+# Wait a moment for GitHub to process the push
+sleep 2
 
 # Create PR
 echo "Creating Pull Request..."
@@ -75,16 +86,22 @@ EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 
 PR_NUMBER=""
 
 if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "null" ]; then
-    # Create new PR
-    PR_NUMBER=$(gh pr create \
+    # Create new PR with error output
+    echo "Attempting to create PR from $BRANCH_NAME to $BASE_BRANCH..."
+    PR_OUTPUT=$(gh pr create \
         --title "$PR_TITLE" \
         --body "$PR_BODY" \
         --base "$BASE_BRANCH" \
         --head "$BRANCH_NAME" \
-        --json number \
-        --jq '.number' 2>/dev/null)
+        --json number,url 2>&1)
     
-    if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+    PR_EXIT_CODE=$?
+    
+    if [ $PR_EXIT_CODE -eq 0 ]; then
+        PR_NUMBER=$(echo "$PR_OUTPUT" | jq -r '.number' 2>/dev/null || echo "")
+        PR_URL=$(echo "$PR_OUTPUT" | jq -r '.url' 2>/dev/null || echo "")
+        
+        if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ] && [ "$PR_NUMBER" != "" ]; then
         echo "PR #$PR_NUMBER created successfully"
         
         # Add code review comments
@@ -121,7 +138,20 @@ if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "null" ]; then
             echo "Warning: Failed to merge PR automatically. Please merge manually to show commits in contribution graph."
         fi
     else
-        echo "Warning: Failed to create PR, but commits were pushed to branch $BRANCH_NAME"
+            echo "Warning: Failed to parse PR number from output"
+            echo "PR creation output: $PR_OUTPUT"
+            echo "You can manually create PR for branch: $BRANCH_NAME"
+        fi
+    else
+        echo "Error: Failed to create PR (exit code: $PR_EXIT_CODE)"
+        echo "PR creation output: $PR_OUTPUT"
+        echo ""
+        echo "Troubleshooting:"
+        echo "1. Check if branch exists: git branch -r | grep $BRANCH_NAME"
+        echo "2. Check GitHub CLI auth: gh auth status"
+        echo "3. Try creating PR manually: gh pr create --head $BRANCH_NAME --base $BASE_BRANCH"
+        echo ""
+        echo "Branch $BRANCH_NAME has been pushed. You can create PR manually."
     fi
 else
     PR_NUMBER="$EXISTING_PR"
