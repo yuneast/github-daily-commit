@@ -129,14 +129,30 @@ if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "" ]; then
         # Merge PR automatically to make commits count for contribution graph
         echo "Merging PR to main branch..."
         sleep 2  # Wait a moment before merging
-        gh pr merge "$PR_NUMBER" --merge --delete-branch 2>/dev/null
         
-        if [ $? -eq 0 ]; then
+        # Try different merge commands for compatibility with older gh versions
+        MERGE_OUTPUT=$(gh pr merge "$PR_NUMBER" --merge 2>&1)
+        MERGE_EXIT_CODE=$?
+        
+        if [ $MERGE_EXIT_CODE -eq 0 ]; then
             echo "PR #$PR_NUMBER merged successfully!"
+            
+            # Try to delete branch (may fail if branch protection is enabled)
+            gh pr merge "$PR_NUMBER" --delete-branch 2>/dev/null || true
+            
             # Pull merged changes
+            git checkout "$BASE_BRANCH" 2>/dev/null || true
             git pull origin "$BASE_BRANCH" 2>/dev/null || true
         else
-            echo "Warning: Failed to merge PR automatically. Please merge manually to show commits in contribution graph."
+            echo "Warning: Failed to merge PR automatically."
+            echo "Merge output: $MERGE_OUTPUT"
+            echo ""
+            echo "You can merge manually:"
+            echo "  1. Visit: $PR_URL"
+            echo "  2. Click 'Merge pull request'"
+            echo "  3. Or run: gh pr merge $PR_NUMBER"
+            echo ""
+            echo "PR must be merged for commits to appear in contribution graph."
         fi
     else
             echo "Warning: Failed to parse PR number from output"
