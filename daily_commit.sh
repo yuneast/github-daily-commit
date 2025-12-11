@@ -37,7 +37,11 @@ echo "Creating branch: $BRANCH_NAME"
 
 # Ensure we're on main branch and it's up to date
 git checkout "$BASE_BRANCH" 2>/dev/null || git checkout -b "$BASE_BRANCH"
-git pull origin "$BASE_BRANCH" 2>/dev/null || true
+
+# Sync with remote (fetch and reset to match remote exactly)
+echo "Syncing with remote repository..."
+git fetch origin "$BASE_BRANCH" 2>/dev/null || true
+git reset --hard "origin/$BASE_BRANCH" 2>/dev/null || echo "Note: Could not sync with remote, continuing anyway..."
 
 # Create new branch for today's updates
 git checkout -b "$BRANCH_NAME" 2>/dev/null || git checkout "$BRANCH_NAME"
